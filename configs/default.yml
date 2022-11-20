@@ -1,0 +1,55 @@
+model:
+  # Path to checkpoint to continue training from or for evaluation (testing)
+  checkpoint_path:
+
+  gpu_ids: [0]
+  init_type: 'normal' # [normal | xavier | kaiming | orthogonal]
+  init_gain: 0.02
+
+  generator:
+    encoder:
+      num_conv_filters: [16, 32, 64, 128, 256]
+      conv_dropout_p: 0.0
+
+    decoder:
+      input_channels: 256
+      output_channels: 2
+      num_upsampling_layers: 5 # Should be set based on input and output dims (not automated yet)
+
+  disc:
+    input_channels: 4
+    num_conv_filters: 64
+
+train:
+  n_initial_epochs: 100 # Number of epochs with the initial learning rate
+  n_decay_epochs: 100 # Number of epochs with decay
+  batch_size: 1
+  num_workers: 4
+
+  mode: 'generator' # one of [generator|ef]
+
+  # Indicates whether Wandb is used to keep track of runs
+  use_wandb: True
+  wand_project_name: medical_imaging
+  wandb_run_name: generator_training
+  wandb_mode: online
+  wandb_iters_per_log: 100
+
+  # Training optimizer configs
+  optimizer:
+    name: adam
+    lr: 0.0002
+    beta1: 0.5
+    lr_policy: 'linear' # [linear | step | plateau | cosine]
+    lr_decay_iters: 50
+    weight_decay: 0.00001
+
+  criteria:
+    l1_lambda: 1.0
+    GAN_lambda: 1.0
+    gan_mode: lsgan # [vanilla| lsgan | wgangp]
+
+data:
+  dataset_path: <path_to_dataset>
+  max_frames: 150
+  frame_size: 224
