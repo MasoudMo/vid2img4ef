@@ -28,7 +28,7 @@ class Engine(object):
         # Set up Wandb if required
         self.use_wandb = config['train']['use_wandb']
         if config['train']['use_wandb']:
-            wandb.init(project=config['train']['wand_project_name'],
+            wandb.init(project=config['train']['wandb_project_name'],
                        name=config['train']['wandb_run_name'],
                        config=config,
                        mode=config['train']['wandb_mode'])
@@ -227,7 +227,6 @@ class Engine(object):
 
         return loss_G.detach().item(), loss_D.detach().item(), fake_img.detach()
 
-
     def log_wandb(self, losses, step_metric, mode='batch_train'):
 
         if not self.train_config['use_wandb']:
@@ -241,7 +240,7 @@ class Engine(object):
             log_dict = {f'{step_name}': step_value,   # both train and valid x axis are called epoch
                         'lr': self.optimizer['gen'].param_groups[0]['lr']}  # record the Learning Rate
         else:
-            raise("invalid mode for wandb logging")
+            raise "invalid mode for wandb logging"
 
         for loss_name, loss in losses.items():
             loss = loss.item() if type(loss) == torch.Tensor else loss

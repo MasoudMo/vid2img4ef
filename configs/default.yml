@@ -30,7 +30,7 @@ train:
 
   # Indicates whether Wandb is used to keep track of runs
   use_wandb: True
-  wand_project_name: medical_imaging
+  wandb_project_name: medical_imaging
   wandb_run_name: generator_training
   wandb_mode: online
   wandb_iters_per_log: 100
