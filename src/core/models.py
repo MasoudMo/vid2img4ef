@@ -1,9 +1,6 @@
 import torch
 import torch.nn as nn
 from torch.nn import init
-import functools
-from torch.optim import lr_scheduler
-import torchvision
 from math import floor
 import torch.nn.functional as F
 

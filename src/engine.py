@@ -292,7 +292,7 @@ class Engine(object):
             log_dict = {f'{mode}/{step_name}': step_value}
         elif "epoch" in mode:
             log_dict = {f'{step_name}': step_value,   # both train and valid x axis are called epoch
-                        'lr': self.optimizer['gen'].param_groups[0]['lr']}  # record the Learning Rate
+                        'lr': self.optimizer[list(self.optimizer.keys())[0]].param_groups[0]['lr']}  # record the Learning Rate
         else:
             raise("invalid mode for wandb logging")
 
