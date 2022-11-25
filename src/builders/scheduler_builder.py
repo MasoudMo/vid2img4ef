@@ -12,7 +12,7 @@ def build(config,
         scheduler['gen'] = get_scheduler(optimizer['gen'], config)
         scheduler['disc'] = get_scheduler(optimizer['disc'], config)
     else:
-        scheduler['encoder'] = get_scheduler(optimizer['encoder'], config)
+        scheduler['ef'] = get_scheduler(optimizer['ef'], config)
 
     logger.info_important('Schedulers are built.')
 

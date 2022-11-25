@@ -1,13 +1,13 @@
 import torch
 import yaml
-import os
 import wandb
 from src.builders import dataloader_builder, dataset_builder, criteria_builder, model_builder, optimizer_builder, \
     scheduler_builder, meter_builder
-from src.utils import reset_meters, update_meters, to_train, to_eval, update_learning_rate, move_to_device, \
+from src.utils import reset_meters, update_meters, to_train, to_eval, update_learning_rate, \
     set_requires_grad, save_networks
 import matplotlib.pyplot as plt
 from tqdm import tqdm
+import os
 
 
 class Engine(object):
@@ -19,6 +19,8 @@ class Engine(object):
 
         self.logger = logger
         self.save_dir = save_dir
+
+        self.best_error = 1000000
 
         # Load and process the config file
         with open(config_path) as f:
@@ -74,6 +76,11 @@ class Engine(object):
                                                'n_epochs_decay': self.train_config['n_decay_epochs']})
         self.model_config.update({'mode': self.train_config['mode']})
 
+        self.model_config['generator']['decoder'].update({'input_channels':
+                                                              self.model_config['generator']['encoder']['num_conv_filters'][-1]})
+        self.model_config['regressor'].update({'input_channels':
+                                                              self.model_config['generator']['encoder']['num_conv_filters'][-1]})
+
     def _build(self, phase):
 
         # Build the datasets
@@ -107,6 +114,24 @@ class Engine(object):
         # Create the loss meter
         self.loss_meters = meter_builder.build(logger=self.logger, mode=self.train_config['mode'])
 
+        # Load model if a checkpoint is provided
+        checkpoint_path = self.model_config['checkpoint_path']
+        if self.train_config['mode'] == 'generator' and checkpoint_path is not None:
+            self.logger.info_important("Loading pretrained encoder/decoder weights for the generator mode.")
+
+            self.model['encoder'].load_state_dict(torch.load(os.path.join(checkpoint_path, 'encoder.pth')))
+            self.model['decoder'].load_state_dict(torch.load(os.path.join(checkpoint_path, 'decoder.pth')))
+
+        if self.train_config['mode'] == 'ef' and checkpoint_path is not None:
+            self.logger.info_important("Loading pretrained encoder/regressor weights for the generator mode.")
+
+            self.model['encoder'].load_state_dict(torch.load(os.path.join(checkpoint_path, 'encoder.pth')))
+
+            if os.path.exists(os.path.join(checkpoint_path, 'regressor.pth')):
+                self.model['regressor'].load_state_dict(torch.load(os.path.join(checkpoint_path, 'regressor.pth')))
+            else:
+                self.logger.info_important("Regressor weights not present. Only loading encoder weights...")
+
     def _train(self):
 
         for epoch in range(self.train_config['n_initial_epochs'] + self.train_config['n_decay_epochs']  + 1):
@@ -118,15 +143,19 @@ class Engine(object):
             self._train_one_epoch(epoch)
 
             # Save model after each epoch
-            save_networks(self.model, self.save_dir, self.model_config['gpu_ids'])
+            save_networks(self.model, self.save_dir, self.model_config['gpu_ids'], mode='last')
 
             # Reset meters
             reset_meters(self.loss_meters)
 
             # Validation epoch
-            self._evaluate_once(epoch, 'val')
+            error = self._evaluate_once(epoch, 'val')
 
             # (to be updated to save best checkpoints)
+            if error < self.best_error:
+                save_networks(self.model, self.save_dir, self.model_config['gpu_ids'], mode='best')
+                self.best_error = error
+
 
     def _train_one_epoch(self, epoch):
         # move models to train mode
@@ -148,23 +177,26 @@ class Engine(object):
                 es_frame = es_frame.cuda()
                 label = label.cuda()
 
-            loss_G, loss_D, fake_img = self._forward_optimize(cine_vid, ed_frame, es_frame, label)
+            loss_G, loss_D, loss_ef, fake_img = self._forward_optimize(cine_vid, ed_frame, es_frame, label)
 
             with torch.no_grad():
-                update_meters(self.loss_meters, {'gen': loss_G, 'disc': loss_D})
+                update_meters(self.loss_meters, {'gen': loss_G, 'disc': loss_D, 'ef': loss_ef})
 
-                self.set_tqdm_description(iterator, 'training', epoch, {'gen': loss_G,'disc': loss_D})
+                self.set_tqdm_description(iterator, 'training', epoch, {'gen': loss_G, 'disc': loss_D, 'ef': loss_ef})
 
                 step = (epoch * epoch_steps + i) * self.train_config['batch_size']
 
                 if self.train_config['use_wandb']:
 
                     if i % self.train_config['wandb_iters_per_log'] == 0:
-                        self.log_wandb({'gen': loss_G, 'disc': loss_D}, {'step': step}, mode='batch_train')
-                        self.log_wandb_img(torch.cat((ed_frame, es_frame, fake_img),
-                                                     dim=1).detach().cpu().numpy(),
-                                           {'step': step},
-                                           mode='batch_train')
+                        self.log_wandb({'gen': loss_G, 'disc': loss_D, 'ef': loss_ef}, {'step': step},
+                                       mode='batch_train')
+
+                        if self.train_config['mode'] == 'generator':
+                            self.log_wandb_img(torch.cat((ed_frame, es_frame, fake_img),
+                                                         dim=1).detach().cpu().numpy(),
+                                               {'step': step},
+                                               mode='batch_train')
 
         # Epoch stats
         if self.train_config['mode'] == 'generator':
@@ -181,52 +213,72 @@ class Engine(object):
                 self.log_wandb(losses, {"epoch": epoch}, mode='epoch/train')
 
         else:
-            pass
+            total_loss = self.loss_meters['ef'].avg
+            losses = {'ef': self.loss_meters['ef'].avg}
+
+            self.logger.info_important("Training Epoch {} - Total loss: {}, "
+                                       "EF loss: {}".format(epoch,
+                                                            total_loss,
+                                                            losses['ef']))
+
+            if self.train_config['use_wandb']:
+                self.log_wandb(losses, {"epoch": epoch}, mode='epoch/train')
 
     def _forward_optimize(self, cine_vid, ed_frame, es_frame, label=None, phase='training'):
 
+        img_embedding = self.model['encoder'](cine_vid)
+
         if self.train_config['mode'] == 'generator':
-            img_embedding = self.model['encoder'](cine_vid)
             fake_img = self.model['decoder'](img_embedding)
 
+            loss_ef = torch.zeros(1)
+
+            ################# Discriminator step ##################
+            set_requires_grad(self.model['disc'], True)
+            self.optimizer['disc'].zero_grad()
+
+            pred_fake = self.model['disc'](torch.cat((ed_frame, es_frame, fake_img), 1).detach())
+            loss_D_fake = self.criteria['GAN'](pred_fake, False)
+
+            real = self.model['disc'](torch.cat((ed_frame, es_frame, ed_frame, es_frame), 1))
+            loss_D_real = self.criteria['GAN'](real, True)
+
+            loss_D = (loss_D_real + loss_D_fake) * 0.5
+
             if phase == 'training':
-
-                ################# Discriminator step ##################
-                set_requires_grad(self.model['disc'], True)
-                self.optimizer['disc'].zero_grad()
-
-                pred_fake = self.model['disc'](torch.cat((ed_frame, es_frame, fake_img), 1).detach())
-                loss_D_fake = self.criteria['GAN'](pred_fake, False)
-
-                real = self.model['disc'](torch.cat((ed_frame, es_frame, ed_frame, es_frame), 1))
-                loss_D_real = self.criteria['GAN'](real, True)
-
-                loss_D = (loss_D_real + loss_D_fake) * 0.5
                 loss_D.backward()
                 self.optimizer['disc'].step()
 
-                ################## Generator step ###################
-                set_requires_grad(self.model['disc'], False)
-                self.optimizer['gen'].zero_grad()
+            ################## Generator step ###################
+            set_requires_grad(self.model['disc'], False)
+            self.optimizer['gen'].zero_grad()
 
-                pred_fake = self.model['disc'](torch.cat((ed_frame, es_frame, fake_img), 1).detach())
-                loss_G_GAN = self.criteria['GAN'](pred_fake, True)
+            pred_fake = self.model['disc'](torch.cat((ed_frame, es_frame, fake_img), 1).detach())
+            loss_G_GAN = self.criteria['GAN'](pred_fake, True)
 
-                loss_G_L1 = self.criteria['L1'](fake_img, torch.cat((ed_frame, es_frame), 1))
+            loss_G_L1 = self.criteria['L1'](fake_img, torch.cat((ed_frame, es_frame), 1))
 
-                loss_G = loss_G_GAN * self.train_config['criteria']['GAN_lambda'] + \
-                         loss_G_L1 * self.train_config['criteria']['l1_lambda']
+            loss_G = loss_G_GAN * self.train_config['criteria']['GAN_lambda'] + \
+                     loss_G_L1 * self.train_config['criteria']['l1_lambda']
 
+            if phase == 'training':
                 loss_G.backward()
                 self.optimizer['gen'].step()
 
         else:
-            loss_G = 0
-            loss_D = 0
-            pass
+            loss_G = torch.zeros(1)
+            loss_D = torch.zeros(1)
+            fake_img = torch.zeros(1)
 
-        return loss_G.detach().item(), loss_D.detach().item(), fake_img.detach()
+            pred_ef = self.model['regressor'](img_embedding.unsqueeze(1))
 
+            loss_ef = self.criteria['L1'](pred_ef.squeeze(), label.squeeze())
+
+            if phase == 'training':
+                loss_ef.backward()
+                self.optimizer['ef'].step()
+
+        return loss_G.detach().item(), loss_D.detach().item(), loss_ef.detach().item(), fake_img.detach()
 
     def log_wandb(self, losses, step_metric, mode='batch_train'):
 
@@ -279,7 +331,75 @@ class Engine(object):
         plt.close()
 
     def _evaluate_once(self, epoch=0, phase='test'):
-        pass
+
+        with torch.no_grad():
+            # move models to train mode
+            to_eval(self.model)
+
+            epoch_steps = len(self.dataloader[phase])
+
+            data_iter = iter(self.dataloader[phase])
+            iterator = tqdm(range(epoch_steps), dynamic_ncols=True)
+            for i in iterator:
+                (cine_vid, ed_frame, es_frame, label) = next(data_iter)
+
+                if len(self.model_config['gpu_ids']) > 0 and torch.cuda.is_available():
+                    cine_vid = cine_vid.cuda()
+                    ed_frame = ed_frame.cuda()
+                    es_frame = es_frame.cuda()
+                    label = label.cuda()
+
+                loss_G, loss_D, loss_ef, fake_img = self._forward_optimize(cine_vid, ed_frame, es_frame, label)
+
+                update_meters(self.loss_meters, {'gen': loss_G, 'disc': loss_D, 'ef': loss_ef})
+
+                self.set_tqdm_description(iterator, 'validation/test', epoch, {'gen': loss_G,
+                                                                               'disc': loss_D,
+                                                                               'ef': loss_ef})
+
+                step = (epoch * epoch_steps + i) * self.train_config['batch_size']
+
+                if self.train_config['use_wandb']:
+
+                    if i % self.train_config['wandb_iters_per_log'] == 0:
+                        self.log_wandb({'gen': loss_G, 'disc': loss_D, 'ef': loss_ef}, {'step': step},
+                                       mode='batch_val')
+
+                        if self.train_config['mode'] == 'generator':
+                            self.log_wandb_img(torch.cat((ed_frame, es_frame, fake_img),
+                                                         dim=1).detach().cpu().numpy(),
+                                               {'step': step},
+                                               mode='batch_val')
+
+            # Epoch stats
+            if self.train_config['mode'] == 'generator':
+                total_loss = self.loss_meters['gen'].avg + self.loss_meters['disc'].avg
+                losses = {'gen': self.loss_meters['gen'].avg, 'disc': self.loss_meters['disc'].avg}
+
+                self.logger.info_important("Validation/Test Epoch {} - Total loss: {}, "
+                                           "Generator loss: {}, Discriminator loss: {}".format(epoch,
+                                                                                               total_loss,
+                                                                                               losses['gen'],
+                                                                                               losses['disc']))
+
+                if self.train_config['use_wandb']:
+                    self.log_wandb(losses, {"epoch": epoch}, mode='epoch/val')
+
+                return total_loss
+
+            else:
+                total_loss = self.loss_meters['ef'].avg
+                losses = {'ef': self.loss_meters['ef'].avg}
+
+                self.logger.info_important("Validation/Test Epoch {} - Total loss: {}, "
+                                           "EF loss: {}".format(epoch,
+                                                                total_loss,
+                                                                losses['ef']))
+
+                if self.train_config['use_wandb']:
+                    self.log_wandb(losses, {"epoch": epoch}, mode='epoch/val')
+
+                return total_loss
 
     def set_tqdm_description(self, iterator, mode, epoch, losses):
 
@@ -289,4 +409,9 @@ class Engine(object):
                                                                             mode,
                                                                             losses['gen'],
                                                                             losses['disc']),
+                                     refresh=True)
+        else:
+            iterator.set_description("[Epoch {}] | {} | EF Loss: {:.4f} | ".format(epoch,
+                                                                            mode,
+                                                                            losses['ef']),
                                      refresh=True)

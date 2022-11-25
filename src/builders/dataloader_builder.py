@@ -13,11 +13,11 @@ def build(config,
         train_sampler = SubsetRandomSampler(dataset.train_idx)
 
         dataloaders['training'] = DataLoader(dataset,
-                                          batch_size=config['batch_size'],
-                                          drop_last=True,
-                                          sampler=train_sampler,
-                                          num_workers=config['num_workers'],
-                                          pin_memory=True)
+                                             batch_size=config['batch_size'],
+                                             drop_last=True,
+                                             sampler=train_sampler,
+                                             num_workers=config['num_workers'],
+                                             pin_memory=True)
 
         dataloaders['val'] = DataLoader(dataset[dataset.val_idx],
                                         batch_size=1,

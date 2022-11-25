@@ -192,6 +192,34 @@ class Conv3DEncoder(nn.Module):
         return self.model(x)
 
 
+class Conv3DRegression(nn.Module):
+
+    def __init__(self, input_channels, mlp_hidden_dims):
+
+        super().__init__()
+
+        models = list()
+
+        self.pool = nn.AdaptiveAvgPool3d((None, 1, 1))
+        models.append(nn.ReLU(inplace=True))
+
+        mlp_hidden_dims.insert(0, input_channels)
+
+        for i in range(1, len(mlp_hidden_dims)):
+            models.append(nn.Linear(mlp_hidden_dims[i-1], mlp_hidden_dims[i]))
+
+            # Relu for all layers except last
+            models.append(nn.ReLU(inplace=True))
+
+        models.append(nn.Linear(mlp_hidden_dims[-1], 1))
+        models.append(nn.Sigmoid())
+        self.model = nn.Sequential(*models)
+
+    def forward(self, x):
+        x = self.pool(x).squeeze(-1).squeeze(-1)
+        return self.model(x)
+
+
 class ConvTransposeDecoder(nn.Module):
 
     def __init__(self, input_channels, output_channels, num_upsampling_layers):

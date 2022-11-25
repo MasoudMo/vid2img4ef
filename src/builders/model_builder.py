@@ -1,4 +1,4 @@
-from src.core.models import Conv3DEncoder, ConvTransposeDecoder, PixelDiscriminator, init_net
+from src.core.models import Conv3DEncoder, ConvTransposeDecoder, PixelDiscriminator, init_net, Conv3DRegression
 
 
 def build(config,
@@ -17,14 +17,14 @@ def build(config,
     # Create the model
     if config['mode'] == 'generator':
         model['encoder'] = init_net(Conv3DEncoder(**config['generator']['encoder']),
-                                      config['init_type'],
-                                      config['init_gain'],
-                                      config['gpu_ids'])
+                                    config['init_type'],
+                                    config['init_gain'],
+                                    config['gpu_ids'])
 
         model['decoder'] = init_net(ConvTransposeDecoder(**config['generator']['decoder']),
-                                      config['init_type'],
-                                      config['init_gain'],
-                                      config['gpu_ids'])
+                                    config['init_type'],
+                                    config['init_gain'],
+                                    config['gpu_ids'])
 
         model['disc'] = init_net(PixelDiscriminator(**config['disc']),
                                  config['init_type'],
@@ -32,6 +32,11 @@ def build(config,
                                  config['gpu_ids'])
     else:
         model['encoder'] = init_net(Conv3DEncoder(**config['generator']['encoder']),
+                                    config['init_type'],
+                                    config['init_gain'],
+                                    config['gpu_ids'])
+
+        model['regressor'] = init_net(Conv3DRegression(**config['regressor']),
                                       config['init_type'],
                                       config['init_gain'],
                                       config['gpu_ids'])

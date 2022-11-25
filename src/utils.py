@@ -71,14 +71,15 @@ def to_eval(model):
 
 def update_learning_rate(optimizer, scheduler, config, metric=None):
     """Update learning rates for all the networks; called at the end of every epoch"""
-    old_lr = optimizer['gen'].param_groups[0]['lr']
+    keys = list(optimizer.keys())
+    old_lr = optimizer[keys[0]].param_groups[0]['lr']
     for key in scheduler.keys():
         if config['lr_policy'] == 'plateau':
             scheduler[key].step(metric)
         else:
             scheduler[key].step()
 
-    lr = optimizer['gen'].param_groups[0]['lr']
+    lr = optimizer[keys[0]].param_groups[0]['lr']
     print('learning rate %.7f -> %.7f' % (old_lr, lr))
 
 
@@ -102,10 +103,10 @@ def set_requires_grad(nets, requires_grad=False):
                 param.requires_grad = requires_grad
 
 
-def save_networks(models, path, gpu_ids):
+def save_networks(models, path, gpu_ids, mode):
     for (name, model) in models.items():
         if len(gpu_ids) > 0 and torch.cuda.is_available():
-            torch.save(model.module.cpu().state_dict(), os.path.join(path, name + '.pth'))
+            torch.save(model.module.cpu().state_dict(), os.path.join(path, mode + '_' + name + '.pth'))
             model.cuda(gpu_ids[0])
         else:
-            torch.save(model.cpu().state_dict(), os.path.join(path, name + '.pth'))
+            torch.save(model.cpu().state_dict(), os.path.join(path, mode + '_' + name + '.pth'))

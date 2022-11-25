@@ -18,9 +18,9 @@ def build(config,
                                              lr=config['lr'],
                                              betas=(config['beta1'], 0.999))
     else:
-        optimizer['encoder'] = torch.optim.Adam(model['encoder'].parameters(),
-                                                lr=config['lr'],
-                                                betas=(config['beta1'], 0.999))
+        optimizer['ef'] = torch.optim.Adam(list(model['encoder'].parameters()) + list(model['regressor'].parameters()),
+                                           lr=config['lr'],
+                                           betas=(config['beta1'], 0.999))
 
     logger.info_important('Optimizer is built for {} mode.'.format(config['mode'].upper()))
 
