@@ -162,7 +162,8 @@ class Engine(object):
         to_train(self.model)
 
         # Update model's learning rate
-        update_learning_rate(self.optimizer, self.scheduler, self.train_config['optimizer'])
+        if epoch != 0:
+            update_learning_rate(self.optimizer, self.scheduler, self.train_config['optimizer'])
 
         epoch_steps = len(self.dataloader['training'])
 
@@ -349,7 +350,7 @@ class Engine(object):
                     es_frame = es_frame.cuda()
                     label = label.cuda()
 
-                loss_G, loss_D, loss_ef, fake_img = self._forward_optimize(cine_vid, ed_frame, es_frame, label)
+                loss_G, loss_D, loss_ef, fake_img = self._forward_optimize(cine_vid, ed_frame, es_frame, label, phase)
 
                 update_meters(self.loss_meters, {'gen': loss_G, 'disc': loss_D, 'ef': loss_ef})
 

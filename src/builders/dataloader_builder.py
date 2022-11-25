@@ -1,4 +1,5 @@
 from torch.utils.data import SubsetRandomSampler, DataLoader
+from src.utils import custom_collate
 
 
 def build(config,
@@ -17,13 +18,15 @@ def build(config,
                                              drop_last=True,
                                              sampler=train_sampler,
                                              num_workers=config['num_workers'],
-                                             pin_memory=True)
+                                             pin_memory=True,
+                                             collate_fn=custom_collate)
 
         dataloaders['val'] = DataLoader(dataset[dataset.val_idx],
                                         batch_size=1,
                                         drop_last=False,
                                         num_workers=config['num_workers'],
-                                        pin_memory=True)
+                                        pin_memory=True,
+                                        collate_fn=custom_collate)
 
         logger.info_important('Dataloaders are built with {} training '
                               'and {} validation samples.'.format(len(train_sampler),

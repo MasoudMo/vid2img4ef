@@ -2,6 +2,7 @@ import logging
 from colorlog import ColoredFormatter
 import torch
 import os
+from torch.nn.utils.rnn import pad_sequence
 
 
 def create_logger(name: str) -> logging.Logger:
@@ -68,6 +69,22 @@ def to_eval(model):
     for key in model.keys():
         model[key].eval()
 
+
+def custom_collate(batch):
+    vids_list, ed_frames_list, es_frames_list, labels_list = [], [], [], []
+
+    for (vid, ed_frame, es_frame, label) in batch:
+        vids_list.append(vid.squeeze(0))
+        ed_frames_list.append(ed_frame)
+        es_frames_list.append(es_frame)
+        labels_list.append(label)
+
+    labels = torch.tensor(labels_list, dtype=torch.double)
+    ed_frames = torch.stack(ed_frames_list)
+    es_frames = torch.stack(es_frames_list)
+    vids = pad_sequence(vids_list, batch_first=True, padding_value=0)
+
+    return vids.unsqueeze(1), ed_frames, es_frames, labels
 
 def update_learning_rate(optimizer, scheduler, config, metric=None):
     """Update learning rates for all the networks; called at the end of every epoch"""
