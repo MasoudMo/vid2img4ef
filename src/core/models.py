@@ -63,7 +63,8 @@ class Custom3DConv(nn.Module):
                  out_channels,
                  kernel_sizes,
                  pool_sizes,
-                 cnn_dropout_p):
+                 cnn_dropout_p,
+                 in_channels=1):
 
         super().__init__()
 
@@ -98,7 +99,7 @@ class Custom3DConv(nn.Module):
         convs = list()
 
         # Add first layer
-        convs.append(nn.Sequential(Conv3DResBlock(in_channels=1,
+        convs.append(nn.Sequential(Conv3DResBlock(in_channels=in_channels,
                                                   padding=paddings[0],
                                                   out_channels=out_channels[0],
                                                   kernel_size=kernel_sizes[0],
@@ -116,19 +117,80 @@ class Custom3DConv(nn.Module):
         # Change to sequential
         self.conv = nn.Sequential(*convs)
 
-        # Output linear layer
-        self.output_fc = nn.Sequential(nn.AdaptiveAvgPool3d((1, 7, 7)),
-                                       nn.ReLU(inplace=True))
+    def forward(self, x):
+
+        # CNN layers
+        x = self.conv(x)
+
+        return x.squeeze(2)
+
+
+class Custom2DConv(nn.Module):
+
+    def __init__(self,
+                 out_channels,
+                 kernel_sizes,
+                 pool_sizes,
+                 cnn_dropout_p,
+                 in_channels=1):
+
+        super().__init__()
+
+        n_conv_layers = len(out_channels)
+
+        # Default list arguments
+        if kernel_sizes is None:
+            kernel_sizes = [3]*n_conv_layers
+        if pool_sizes is None:
+            pool_sizes = [2]*n_conv_layers
+
+        # Ensure input params are list
+        if type(out_channels) is not list:
+            out_channels = [out_channels]*n_conv_layers
+        else:
+            assert len(out_channels) == n_conv_layers, 'Provide channel parameter for all layers.'
+        if type(kernel_sizes) is not list:
+            kernel_sizes = [kernel_sizes]*n_conv_layers
+        else:
+            assert len(kernel_sizes) == n_conv_layers, 'Provide kernel size parameter for all layers.'
+        if type(pool_sizes) is not list:
+            pool_sizes = [pool_sizes]*n_conv_layers
+        else:
+            assert len(pool_sizes) == n_conv_layers, 'Provide pool size parameter for all layers.'
+
+        # Compute paddings to preserve temporal dim
+        paddings = list()
+        for kernel_size in kernel_sizes:
+            paddings.append(floor((kernel_size - 1) / 2))
+
+        # Conv layers
+        convs = list()
+
+        # Add first layer
+        convs.append(nn.Sequential(Conv2DResBlock(in_channels=in_channels,
+                                                  padding=paddings[0],
+                                                  out_channels=out_channels[0],
+                                                  kernel_size=kernel_sizes[0],
+                                                  pool_size=pool_sizes[0],
+                                                  cnn_dropout_p=cnn_dropout_p)))
+
+        # Add subsequent layers
+        for layer_num in range(1, n_conv_layers):
+            convs.append(nn.Sequential(Conv2DResBlock(in_channels=out_channels[layer_num-1],
+                                                      padding=paddings[layer_num],
+                                                      out_channels=out_channels[layer_num],
+                                                      kernel_size=kernel_sizes[layer_num],
+                                                      pool_size=pool_sizes[layer_num],
+                                                      cnn_dropout_p=cnn_dropout_p)))
+        # Change to sequential
+        self.conv = nn.Sequential(*convs)
 
     def forward(self, x):
 
         # CNN layers
         x = self.conv(x)
 
-        # FC layer
-        x = self.output_fc(x)
-
-        return x.squeeze(2)
+        return x
 
 
 class Conv3DResBlock(nn.Module):
@@ -172,6 +234,47 @@ class Conv3DResBlock(nn.Module):
         return self.dropout(x)
 
 
+class Conv2DResBlock(nn.Module):
+
+    def __init__(self,
+                 in_channels,
+                 padding,
+                 out_channels,
+                 kernel_size,
+                 pool_size,
+                 cnn_dropout_p):
+
+        super().__init__()
+
+        # 1x1 convolution to make the channels equal for the residual
+        self.shortcut = None
+        if in_channels != out_channels:
+            self.shortcut = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=1)
+
+        self.conv = nn.Conv2d(in_channels=in_channels,
+                              out_channels=out_channels,
+                              kernel_size=kernel_size,
+                              padding=(padding, padding))
+        self.bn = nn.BatchNorm2d(out_channels)
+        self.pool = nn.AvgPool2d(kernel_size=(pool_size, pool_size))
+        self.dropout = nn.Dropout2d(p=cnn_dropout_p)
+
+    def forward(self, x):
+
+        if self.shortcut is not None:
+            residual = self.shortcut(x)
+        else:
+            residual = x
+
+        x = self.conv(x)
+        x = self.bn(x)
+        x = x + residual
+        x = self.pool(x)
+        x = F.elu(x)
+
+        return self.dropout(x)
+
+
 class Conv3DEncoder(nn.Module):
 
     def __init__(self, num_conv_filters, conv_dropout_p):
@@ -184,14 +287,19 @@ class Conv3DEncoder(nn.Module):
                                   pool_sizes=[2] * len(num_conv_filters),
                                   cnn_dropout_p=conv_dropout_p)
 
+        # Output linear layer
+        self.pool = nn.Sequential(nn.AdaptiveAvgPool3d((1, None, None)),
+                                  nn.ReLU(inplace=True))
+
     def forward(self, x):
         """Standard forward"""
-        return self.model(x)
+        x = self.model(x)
+        return self.pool(x)
 
 
-class Conv3DRegression(nn.Module):
+class PoolLinearRegression(nn.Module):
 
-    def __init__(self, input_channels, mlp_hidden_dims):
+    def __init__(self, input_channels, mlp_hidden_dims, mlp_dropout_p):
 
         super().__init__()
 
@@ -205,6 +313,8 @@ class Conv3DRegression(nn.Module):
         for i in range(1, len(mlp_hidden_dims)):
             models.append(nn.Linear(mlp_hidden_dims[i-1], mlp_hidden_dims[i]))
 
+            models.append(nn.Dropout(p=mlp_dropout_p))
+
             # Relu for all layers except last
             models.append(nn.ReLU(inplace=True))
 
@@ -215,6 +325,41 @@ class Conv3DRegression(nn.Module):
     def forward(self, x):
         x = self.pool(x).squeeze(-1).squeeze(-1)
         return self.model(x)
+
+
+class Conv3DPoolLinearRegression(nn.Module):
+
+    def __init__(self, input_channels, num_conv_filters, conv_dropout_p, mlp_hidden_dims, mlp_dropout_p):
+
+        super().__init__()
+
+        self.conv = Custom2DConv(in_channels=input_channels,
+                                 out_channels=num_conv_filters,
+                                 kernel_sizes=[3] * len(num_conv_filters),
+                                 pool_sizes=[2] * len(num_conv_filters),
+                                 cnn_dropout_p=conv_dropout_p)
+
+        self.pool = nn.AdaptiveAvgPool2d((1, 1))
+
+        mlp = list()
+        mlp_hidden_dims.insert(0, num_conv_filters[-1])
+
+        for i in range(1, len(mlp_hidden_dims)):
+            mlp.append(nn.Linear(mlp_hidden_dims[i-1], mlp_hidden_dims[i]))
+
+            mlp.append(nn.Dropout(p=mlp_dropout_p))
+
+            # Relu for all layers except last
+            mlp.append(nn.ReLU(inplace=True))
+
+        mlp.append(nn.Linear(mlp_hidden_dims[-1], 1))
+        mlp.append(nn.Sigmoid())
+        self.mlp = nn.Sequential(*mlp)
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.pool(x).squeeze(-1).squeeze(-1)
+        return self.mlp(x)
 
 
 class ConvTransposeDecoder(nn.Module):

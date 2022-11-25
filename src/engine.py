@@ -234,7 +234,7 @@ class Engine(object):
                 self.optimizer[key].zero_grad()
 
         if self.train_config['mode'] == 'generator':
-            fake_img = self.model['decoder'](img_embedding)
+            fake_img = self.model['decoder'](img_embedding.squeeze(2))
 
             loss_ef = torch.zeros(1)
 
@@ -275,7 +275,7 @@ class Engine(object):
             loss_D = torch.zeros(1)
             fake_img = torch.zeros(1)
 
-            pred_ef = self.model['regressor'](img_embedding.unsqueeze(1))
+            pred_ef = self.model['regressor'](img_embedding.squeeze(2))
 
             loss_ef = self.criteria['L1'](pred_ef.squeeze(), label.squeeze())
 

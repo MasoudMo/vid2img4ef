@@ -1,4 +1,10 @@
-from src.core.models import Conv3DEncoder, ConvTransposeDecoder, PixelDiscriminator, init_net, Conv3DRegression
+from src.core.models import Conv3DEncoder, ConvTransposeDecoder, PixelDiscriminator, init_net, PoolLinearRegression, \
+    Conv3DPoolLinearRegression
+from copy import deepcopy
+
+
+REGRESSORS = {'linear': PoolLinearRegression,
+              'conv3d': Conv3DPoolLinearRegression}
 
 
 def build(config,
@@ -11,6 +17,8 @@ def build(config,
     :param logger: logging.Logger, custom logger
     :return: Pytorch Module
     """
+
+    config = deepcopy(config)
 
     model = dict()
 
@@ -36,7 +44,8 @@ def build(config,
                                     config['init_gain'],
                                     config['gpu_ids'])
 
-        model['regressor'] = init_net(Conv3DRegression(**config['regressor']),
+        regressor_name = config['regressor'].pop('type')
+        model['regressor'] = init_net(REGRESSORS[regressor_name](**config['regressor']),
                                       config['init_type'],
                                       config['init_gain'],
                                       config['gpu_ids'])

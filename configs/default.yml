@@ -16,7 +16,11 @@ model:
       num_upsampling_layers: 5 # Should be set based on input and output dims (not automated yet)
 
   regressor:
-    mlp_hidden_dims: [128, 64, 32, 16]
+    type: conv3d # [linear | conv3d]
+    mlp_hidden_dims: [256, 128, 64, 32, 16]
+    mlp_dropout_p: 0.0
+    conv_dropout_p: 0.0
+    num_conv_filters: [256, 512]
 
   disc:
     input_channels: 4
@@ -28,13 +32,13 @@ train:
   batch_size: 2
   num_workers: 4
 
-  mode: 'ef' # one of [generator|ef]
+  mode: 'generator' # one of [generator|ef]
 
   # Indicates whether Wandb is used to keep track of runs
   use_wandb: False
   wand_project_name: medical_imaging
-  wandb_run_name: vanilla_ef_training
-  wandb_mode: online
+  wandb_run_name: <run_name>
+  wandb_mode: offline
   wandb_iters_per_log: 100
 
   # Training optimizer configs
