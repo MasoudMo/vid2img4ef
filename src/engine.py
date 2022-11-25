@@ -229,6 +229,10 @@ class Engine(object):
 
         img_embedding = self.model['encoder'](cine_vid)
 
+        if phase == 'training':
+            for key in self.optimizer.keys():
+                self.optimizer['key'].zero_grad()
+
         if self.train_config['mode'] == 'generator':
             fake_img = self.model['decoder'](img_embedding)
 
