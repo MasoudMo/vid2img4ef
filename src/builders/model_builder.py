@@ -4,7 +4,7 @@ from copy import deepcopy
 
 
 REGRESSORS = {'linear': PoolLinearRegression,
-              'conv3d': Conv3DPoolLinearRegression}
+              'conv': Conv3DPoolLinearRegression}
 
 
 def build(config,

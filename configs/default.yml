@@ -16,11 +16,12 @@ model:
       num_upsampling_layers: 5 # Should be set based on input and output dims (not automated yet)
 
   regressor:
-    type: conv3d # [linear | conv3d]
+    type: conv # [linear | conv]
     mlp_hidden_dims: [256, 128, 64, 32, 16]
     mlp_dropout_p: 0.0
     conv_dropout_p: 0.0
     num_conv_filters: [256, 512]
+    freeze_encoder: False
 
   disc:
     input_channels: 4
@@ -32,7 +33,7 @@ train:
   batch_size: 2
   num_workers: 4
 
-  mode: 'generator' # one of [generator|ef]
+  mode: 'ef' # one of [generator|ef]
 
   # Indicates whether Wandb is used to keep track of runs
   use_wandb: False
