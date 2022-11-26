@@ -5,6 +5,7 @@ from src.builders import dataloader_builder, dataset_builder, criteria_builder, 
     scheduler_builder, meter_builder
 from src.utils import reset_meters, update_meters, to_train, to_eval, update_learning_rate, \
     set_requires_grad, save_networks
+from src.core.evaluators import R2Evaluator
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 import os
@@ -111,6 +112,10 @@ class Engine(object):
                                                  optimizer=self.optimizer,
                                                  logger=self.logger)
 
+        # Create the R2 evaluator
+        if self.train_config['mode'] == 'ef':
+            self.r2_evaluator = R2Evaluator()
+
         # Create the loss meter
         self.loss_meters = meter_builder.build(logger=self.logger, mode=self.train_config['mode'])
 
@@ -136,8 +141,10 @@ class Engine(object):
 
         for epoch in range(self.train_config['n_initial_epochs'] + self.train_config['n_decay_epochs']  + 1):
 
-            # Reset meters
+            # Reset meters/evaluators
             reset_meters(self.loss_meters)
+            if self.train_config['mode'] == 'ef':
+                self.r2_evaluator.reset()
 
             # Train for one epoch
             self._train_one_epoch(epoch)
@@ -145,8 +152,10 @@ class Engine(object):
             # Save model after each epoch
             save_networks(self.model, self.save_dir, self.model_config['gpu_ids'], mode='last')
 
-            # Reset meters
+            # Reset meters/evaluators
             reset_meters(self.loss_meters)
+            if self.train_config['mode'] == 'ef':
+                self.r2_evaluator.reset()
 
             # Validation epoch
             error = self._evaluate_once(epoch, 'val')
@@ -215,12 +224,14 @@ class Engine(object):
 
         else:
             total_loss = self.loss_meters['ef'].avg
-            losses = {'ef': self.loss_meters['ef'].avg}
+            losses = {'ef': self.loss_meters['ef'].avg,
+                      'r2': self.r2_evaluator.compute()}
 
             self.logger.info_important("Training Epoch {} - Total loss: {}, "
-                                       "EF loss: {}".format(epoch,
-                                                            total_loss,
-                                                            losses['ef']))
+                                       "EF loss: {}, R2 Score: {}".format(epoch,
+                                                                          total_loss,
+                                                                          losses['ef'],
+                                                                          losses['r2']))
 
             if self.train_config['use_wandb']:
                 self.log_wandb(losses, {"epoch": epoch}, mode='epoch/train')
@@ -282,6 +293,10 @@ class Engine(object):
             if phase == 'training':
                 loss_ef.backward()
                 self.optimizer['ef'].step()
+
+            with torch.no_grad():
+                self.r2_evaluator.update(pred_ef.squeeze().detach().cpu().numpy(),
+                                         label.squeeze().detach().cpu().numpy())
 
         return loss_G.detach().item(), loss_D.detach().item(), loss_ef.detach().item(), fake_img.detach()
 
@@ -394,12 +409,14 @@ class Engine(object):
 
             else:
                 total_loss = self.loss_meters['ef'].avg
-                losses = {'ef': self.loss_meters['ef'].avg}
+                losses = {'ef': self.loss_meters['ef'].avg,
+                          'r2': self.r2_evaluator.compute()}
 
                 self.logger.info_important("Validation/Test Epoch {} - Total loss: {}, "
-                                           "EF loss: {}".format(epoch,
-                                                                total_loss,
-                                                                losses['ef']))
+                                           "EF loss: {}, R2 Score: {}".format(epoch,
+                                                                              total_loss,
+                                                                              losses['ef'],
+                                                                              losses['r2']))
 
                 if self.train_config['use_wandb']:
                     self.log_wandb(losses, {"epoch": epoch}, mode='epoch/val')
