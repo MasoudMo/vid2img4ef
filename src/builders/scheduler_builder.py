@@ -40,7 +40,7 @@ def get_scheduler(optimizer, config):
     elif config['lr_policy'] == 'step':
         scheduler = lr_scheduler.StepLR(optimizer, step_size=config['lr_decay_iters'], gamma=0.1)
     elif config['lr_policy'] == 'plateau':
-        scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.2, threshold=0.01, patience=5)
+        scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, threshold=0.01, patience=5)
     elif config['lr_policy'] == 'cosine':
         scheduler = lr_scheduler.CosineAnnealingLR(optimizer, T_max=config['n_epochs'], eta_min=0)
     else:

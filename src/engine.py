@@ -153,10 +153,6 @@ class Engine(object):
         # move models to train mode
         to_train(self.model)
 
-        # Update model's learning rate
-        if epoch != 0:
-            update_learning_rate(self.optimizer, self.scheduler, self.train_config['optimizer'])
-
         epoch_steps = len(self.dataloader['training'])
 
         data_iter = iter(self.dataloader['training'])
@@ -218,6 +214,8 @@ class Engine(object):
 
             if self.train_config['use_wandb']:
                 self.log_wandb(losses, {"epoch": epoch}, mode='epoch/train')
+
+        update_learning_rate(self.optimizer, self.scheduler, self.train_config['optimizer'], metric=total_loss)
 
     def _forward_optimize(self, cine_vid, ed_frame, es_frame, label=None, phase='training'):
 
