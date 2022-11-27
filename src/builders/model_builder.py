@@ -74,8 +74,8 @@ def build(config,
             else:
                 logger.info_important("Regressor weights not present. Only loading encoder weights...")
 
-            model['encoder'] = move_model_to_device(model['encoder'], config['gpu_ids'])
-            model['regressor'] = move_model_to_device(model['regressor'], config['gpu_ids'])
+        model['encoder'] = move_model_to_device(model['encoder'], config['gpu_ids'])
+        model['regressor'] = move_model_to_device(model['regressor'], config['gpu_ids'])
 
     logger.info_important('Model is built for {} mode.'.format(config['mode'].upper()))
 
