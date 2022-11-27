@@ -96,7 +96,8 @@ class Engine(object):
 
         # Build the model
         self.model = model_builder.build(config=self.model_config,
-                                         logger=self.logger)
+                                         logger=self.logger,
+                                         checkpoint_path=self.model_config['checkpoint_path'])
 
         # Create the criteria
         self.criteria = criteria_builder.build(config=self.train_config['criteria'],
@@ -118,24 +119,6 @@ class Engine(object):
 
         # Create the loss meter
         self.loss_meters = meter_builder.build(logger=self.logger, mode=self.train_config['mode'])
-
-        # Load model if a checkpoint is provided
-        checkpoint_path = self.model_config['checkpoint_path']
-        if self.train_config['mode'] == 'generator' and checkpoint_path is not None:
-            self.logger.info_important("Loading pretrained encoder/decoder weights for the generator mode.")
-
-            self.model['encoder'].load_state_dict(torch.load(os.path.join(checkpoint_path, 'encoder.pth')))
-            self.model['decoder'].load_state_dict(torch.load(os.path.join(checkpoint_path, 'decoder.pth')))
-
-        if self.train_config['mode'] == 'ef' and checkpoint_path is not None:
-            self.logger.info_important("Loading pretrained encoder/regressor weights for the generator mode.")
-
-            self.model['encoder'].load_state_dict(torch.load(os.path.join(checkpoint_path, 'encoder.pth')))
-
-            if os.path.exists(os.path.join(checkpoint_path, 'regressor.pth')):
-                self.model['regressor'].load_state_dict(torch.load(os.path.join(checkpoint_path, 'regressor.pth')))
-            else:
-                self.logger.info_important("Regressor weights not present. Only loading encoder weights...")
 
     def _train(self):
 
