@@ -22,6 +22,10 @@ encoder is then used in a supervised learning setting to perform EF estimation.
 We showcase the success of our proposed approach by showing a 5% R2 score
 increase compared to baselines not using the aforementioned pre-training
 
+<p align="center">
+  <img alt="Overall GAN architecture" src="./gan.PNG" width="700"/>
+</p>
+
 ## Dataset
 EchoNet-Dynamic public EF dataset is used for this project. This dataset can be accessed
 [here](https://echonet.github.io/dynamic/index.html).
