@@ -39,6 +39,6 @@ def build(config,
                                          num_workers=config['num_workers'])
 
         logger.info_important('Test Phase Dataloader is built.')
-        logger.info_important('Using {} test samples.'.format(len(dataset.text_idx)))
+        logger.info_important('Using {} test samples.'.format(len(dataset.test_idx)))
 
     return dataloaders
